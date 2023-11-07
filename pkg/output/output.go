@@ -13,7 +13,6 @@ type Response struct {
 }
 
 func ReturnResponse(response Response) {
-
 	switch output := response.Output; output {
 	case "json":
 		r := Response{
@@ -22,22 +21,21 @@ func ReturnResponse(response Response) {
 			Info:   response.Info,
 		}
 		jr, _ := json.Marshal(r)
-		fmt.Printf(string(jr))
-		fmt.Println("")
+		fmt.Printf("%s\n", string(jr))
 		return
 	case "txt":
 		if response.Status == "success" {
 			fmt.Println(response.Token)
 			return
 		} else {
-			fmt.Printf("Error: %s", response.Info)
+			fmt.Printf("Error: %s\n", response.Info)
 			return
 		}
 	case "export":
 		if response.Status == "success" {
 			fmt.Printf("export GH_TOKEN=%s", response.Token)
 		} else {
-			fmt.Printf("Error: %s", response.Info)
+			fmt.Printf("Error: %s\n", response.Info)
 			return
 		}
 	}

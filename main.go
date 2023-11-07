@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/marcportabellaclotet-mt/gh-app-token-generator/pkg/cmd"
+	"github.com/marcportabellaclotet-mt/gh-app-token-generator/cmd"
 )
 
 func main() {

@@ -55,3 +55,7 @@ func IssueJWTFromPEM(key *rsa.PrivateKey, appID string) string {
 
 	return ss
 }
+
+func String(v string) *string {
+	return &v
+}

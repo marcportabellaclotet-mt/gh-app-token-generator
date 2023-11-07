@@ -2,9 +2,11 @@ package github
 
 import (
 	"encoding/json"
-	"errors"
+	"strconv"
+
 	"fmt"
-	"io/ioutil"
+	"io"
+
 	"net/http"
 	"strings"
 	"time"
@@ -13,19 +15,60 @@ import (
 	"github.com/marcportabellaclotet-mt/gh-app-token-generator/pkg/output"
 )
 
+const (
+	githubURL              = "https://api.github.com"
+	githubInstallationsURL = "https://api.github.com/app/installations"
+)
+
 var (
-	githubURL = "https://api.github.com/app/installations"
+	AppInst string
 )
 
 type GitHubAppInfo struct {
 	AppID      string
 	AppInstID  string
+	GHRepo     string
 	PrivateKey []byte
+}
+
+func GetInstallationID(token string, repo string) (*string, error) {
+
+	u := strings.Join([]string{githubURL, "repos", repo, "installation"}, "/")
+
+	var resBody struct {
+		Id int `json:"id"`
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	b, _ := io.ReadAll(res.Body)
+
+	if res.StatusCode < 200 || res.StatusCode > 300 {
+		return nil, fmt.Errorf("Invalid response code : %d", res.StatusCode)
+	}
+	if err := json.Unmarshal(b, &resBody); err != nil {
+		return nil, fmt.Errorf("Problem unmarshalling Body : %s\n", err.Error())
+	}
+	r := strconv.Itoa(resBody.Id)
+	return helpers.String(r), nil
 }
 
 func GetInstallationToken(token string, appInstID string) (*string, error) {
 
-	u := strings.Join([]string{githubURL, appInstID, "access_tokens"}, "/")
+	u := strings.Join([]string{githubInstallationsURL, appInstID, "access_tokens"}, "/")
 
 	var resBody struct {
 		Token       string    `json:"token"`
@@ -38,7 +81,7 @@ func GetInstallationToken(token string, appInstID string) (*string, error) {
 		RepositorySelection string `json:"repository_selection"`
 	}
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 
 	req, err := http.NewRequest("POST", u, nil)
 	if err != nil {
@@ -52,46 +95,40 @@ func GetInstallationToken(token string, appInstID string) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 
-	b, _ := ioutil.ReadAll(res.Body)
+	b, _ := io.ReadAll(res.Body)
 
 	if res.StatusCode < 200 || res.StatusCode > 300 {
-		return nil, errors.New(fmt.Sprintf("Invalid response code : %d", res.StatusCode))
+		return nil, fmt.Errorf("Invalid response code : %d", res.StatusCode)
 	}
 
 	if err := json.Unmarshal(b, &resBody); err != nil {
-		return nil, errors.New(fmt.Sprintf("Problem unmarshalling Body : %s\n", err.Error()))
+		return nil, fmt.Errorf("Problem unmarshalling Body : %s\n", err.Error())
 	}
 
 	return &resBody.Token, nil
 }
 
-func GenToken(gh GitHubAppInfo, outputFormat string) {
+func GenToken(gh GitHubAppInfo, outputFormat string) error {
 	key, err := helpers.LoadPEMFromBytes(gh.PrivateKey)
 	if err != nil {
-		response := output.Response{
-			Token:  "error",
-			Status: "failed",
-			Info:   fmt.Sprintf("Unable to load PEM - %s", err.Error()),
-			Output: outputFormat,
-		}
-		output.ReturnResponse(response)
-		return //fmt.Println(jwt)
-
+		return err
 	}
 
 	jwt := helpers.IssueJWTFromPEM(key, gh.AppID)
-
-	token, err := GetInstallationToken(jwt, gh.AppInstID)
-	if err != nil {
-		response := output.Response{
-			Token:  "error",
-			Status: "failed",
-			Info:   fmt.Sprintf("Unable to get installation token : %s", err),
-			Output: outputFormat,
+	if gh.AppInstID != "" {
+		AppInst = gh.AppInstID
+	} else {
+		a, err := GetInstallationID(jwt, gh.GHRepo)
+		if err != nil {
+			return err
 		}
-		output.ReturnResponse(response)
-		return
+		AppInst = *helpers.String(*a)
+	}
+	token, err := GetInstallationToken(jwt, AppInst)
+	if err != nil {
+		return err
 	}
 	response := output.Response{
 		Token:  *token,
@@ -101,4 +138,5 @@ func GenToken(gh GitHubAppInfo, outputFormat string) {
 	}
 
 	output.ReturnResponse(response)
+	return nil
 }
